@@ -57,11 +57,15 @@ public static double tMaxOutput = 1.0;
 //sparkmax variables
 
 //sparkflex
+private SparkFlex f_intakeMotor;
+private SparkClosedLoopController f_pidController;
+private RelativeEncoder f_encoder;
 private SparkFlex m_shooterMotor;
 private SparkClosedLoopController m_pidController;
 private RelativeEncoder m_encoder;
 public double kP, kI, kD, kFF, kMaxOutput, kMinOutput;
-public static final double kTargetRPM = 2000;
+public static double kTargetRPM = 6000;
+public static double inTake = 2000;
   /** Called once at the beginning of the robot program. */
   public Robot() {
     SendableRegistry.addChild(m_robotDrive, m_leftDrive);
@@ -76,6 +80,9 @@ public static final double kTargetRPM = 2000;
     turretConfig.closedLoop.iZone(I_Zone);
     turretConfig.closedLoop.outputRange(tMinOutput, tMaxOutput);
 
+    f_intakeMotor = new SparkFlex(7, MotorType.kBrushless);
+f_pidController = f_intakeMotor.getClosedLoopController();
+f_encoder = f_intakeMotor.getEncoder();
     m_shooterMotor = new SparkFlex(3, MotorType.kBrushless);
 m_pidController = m_shooterMotor.getClosedLoopController();
 m_encoder = m_shooterMotor.getEncoder();
@@ -88,6 +95,7 @@ double kMaxOutput = 1.0;
 double kMinOutput = -1.0;
 
 SparkFlexConfig shooterConfig = new SparkFlexConfig();
+SparkFlexConfig intakeConfig = new SparkFlexConfig();
 
 shooterConfig.closedLoop
     .feedbackSensor(FeedbackSensor.kPrimaryEncoder)
@@ -96,14 +104,25 @@ shooterConfig.closedLoop
     .d(kD)
     .velocityFF(kFF)
     .outputRange(kMinOutput, kMaxOutput);
-
+    intakeConfig.closedLoop
+    .feedbackSensor(FeedbackSensor.kPrimaryEncoder)
+    .p(kP)
+    .i(kI)
+    .d(kD)
+    .velocityFF(kFF)
+    .outputRange(kMinOutput, kMaxOutput);
+f_intakeMotor.configure( 
+    intakeConfig,
+    ResetMode.kResetSafeParameters,
+    PersistMode.kPersistParameters
+);
 m_shooterMotor.configure(
     shooterConfig,
     ResetMode.kResetSafeParameters,
     PersistMode.kPersistParameters
 );
   
-final double kTargetRPM = 2000;
+
 
 
     // We need to invert one side of the drivetrain so that positive voltages
@@ -152,12 +171,17 @@ final double kTargetRPM = 2000;
       m_intake.set(0.0);
     }
     //output
-    if (m_controller.getXButtonPressed()) {
-      m_intake.set(1.0);
+    if (m_controller.getAButton()) {
+      f_pidController.setReference(inTake, ControlType.kVelocity);
     } else {
-      m_intake.set(0.0);
+        f_intakeMotor.stopMotor();
     }
-
+    if (m_controller.getRightBumperButton()) {
+      kTargetRPM += 250;
+    }
+    if (m_controller.getLeftBumperButton()) {
+      kTargetRPM -= 250;
+    }
     if (m_controller.getYButton()) {
       m_pidController.setReference(kTargetRPM, ControlType.kVelocity);
   } else {
