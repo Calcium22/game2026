@@ -9,6 +9,7 @@ import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
+import edu.wpi.first.wpilibj.motorcontrol.MotorControllerGroup;
 import edu.wpi.first.wpilibj.motorcontrol.PWMSparkMax;
 //sparkmax imports
 import com.revrobotics.spark.SparkMax;
@@ -17,7 +18,6 @@ import com.revrobotics.spark.SparkLowLevel.MotorType;
 import com.revrobotics.spark.config.SparkMaxConfig;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.spark.SparkBase.ControlType;
-//sparkflex imports
 import com.revrobotics.spark.SparkFlex;
 import com.revrobotics.spark.SparkBase.ControlType;
 import com.revrobotics.spark.SparkBase.PersistMode;
@@ -32,19 +32,23 @@ import edu.wpi.first.wpilibj.TimedRobot;
  * this project, you must also update the manifest file in the resource directory.
  */
 public class Robot extends TimedRobot {
-  private final PWMSparkMax m_leftDrive = new PWMSparkMax(0);
-  private final PWMSparkMax m_rightDrive = new PWMSparkMax(1);
-  //intake motor has reverse on x pressed
-  private final PWMSparkMax m_intake = new PWMSparkMax(2);
+  private final SparkMax m_leftDrive = new SparkMax(1, MotorType.kBrushed);
+  private final SparkMax m_leftDrive1 = new SparkMax(2, MotorType.kBrushed);
+  MotorControllerGroup m_leftGroup =
+      new MotorControllerGroup(m_leftDrive, m_leftDrive1);
+  private final SparkMax m_rightDrive = new SparkMax(3, MotorType.kBrushed);
+  private final SparkMax m_rightDrive1 = new SparkMax(4, MotorType.kBrushed);
+  MotorControllerGroup m_rightGroup =
+      new MotorControllerGroup(m_rightDrive, m_rightDrive1);
   private final DifferentialDrive m_robotDrive =
-      new DifferentialDrive(m_leftDrive::set, m_rightDrive::set);
-  private final XboxController m_controller = new XboxController(0);
+      new DifferentialDrive(m_leftGroup::set, m_rightGroup::set);
+  private final XboxController m_p1Controller = new XboxController(0);
+  private final XboxController m_p2Controller = new XboxController(1);
   private final Timer m_timer = new Timer();
 
 //sparkmax motor
-private final SparkMax c_canTurretMotor = new SparkMax(1, MotorType.kBrushless);
-private final SparkClosedLoopController c_turretController =
-    c_canTurretMotor.getClosedLoopController();
+private final SparkMax c_canTurretMotor = new SparkMax(5, MotorType.kBrushed);
+private final SparkClosedLoopController c_turretController = c_canTurretMotor.getClosedLoopController();
 private final RelativeEncoder c_turretEncoder = c_canTurretMotor.getEncoder();
 
 // PID constants
@@ -56,16 +60,12 @@ public static double tMinOutput = 0.1;
 public static double tMaxOutput = 1.0;
 //sparkmax variables
 
-//sparkflex
-private SparkFlex f_intakeMotor;
-private SparkClosedLoopController f_pidController;
-private RelativeEncoder f_encoder;
+//sparkflex motor
 private SparkFlex m_shooterMotor;
 private SparkClosedLoopController m_pidController;
 private RelativeEncoder m_encoder;
 public double kP, kI, kD, kFF, kMaxOutput, kMinOutput;
-public static double kTargetRPM = 6000;
-public static double inTake = 2000;
+public static double kShooterRPM = 6000;
   /** Called once at the beginning of the robot program. */
   public Robot() {
     SendableRegistry.addChild(m_robotDrive, m_leftDrive);
@@ -79,10 +79,7 @@ public static double inTake = 2000;
     turretConfig.closedLoop.d(Derivative);
     turretConfig.closedLoop.iZone(I_Zone);
     turretConfig.closedLoop.outputRange(tMinOutput, tMaxOutput);
-
-    f_intakeMotor = new SparkFlex(7, MotorType.kBrushless);
-f_pidController = f_intakeMotor.getClosedLoopController();
-f_encoder = f_intakeMotor.getEncoder();
+ 
     m_shooterMotor = new SparkFlex(3, MotorType.kBrushless);
 m_pidController = m_shooterMotor.getClosedLoopController();
 m_encoder = m_shooterMotor.getEncoder();
@@ -95,7 +92,6 @@ double kMaxOutput = 1.0;
 double kMinOutput = -1.0;
 
 SparkFlexConfig shooterConfig = new SparkFlexConfig();
-SparkFlexConfig intakeConfig = new SparkFlexConfig();
 
 shooterConfig.closedLoop
     .feedbackSensor(FeedbackSensor.kPrimaryEncoder)
@@ -104,23 +100,12 @@ shooterConfig.closedLoop
     .d(kD)
     .velocityFF(kFF)
     .outputRange(kMinOutput, kMaxOutput);
-    intakeConfig.closedLoop
-    .feedbackSensor(FeedbackSensor.kPrimaryEncoder)
-    .p(kP)
-    .i(kI)
-    .d(kD)
-    .velocityFF(kFF)
-    .outputRange(kMinOutput, kMaxOutput);
-f_intakeMotor.configure( 
-    intakeConfig,
-    ResetMode.kResetSafeParameters,
-    PersistMode.kPersistParameters
-);
 m_shooterMotor.configure(
     shooterConfig,
     ResetMode.kResetSafeParameters,
     PersistMode.kPersistParameters
 );
+
   
 
 
@@ -157,38 +142,31 @@ m_shooterMotor.configure(
   /** This function is called periodically during teleoperated mode. */
   @Override
   public  void teleopPeriodic() {
-    m_robotDrive.arcadeDrive(-m_controller.getLeftY() * .5, -m_controller.getRightX() * .5);
+    m_robotDrive.arcadeDrive(-m_p1Controller.getLeftY() * .5, -m_p1Controller.getRightX() * .5);
 
     // Intake control
-    if (m_controller.getAButtonPressed()) {
-      m_intake.set(1.0); 
+    if (m_p1Controller.getAButtonPressed()) {
+  m_pidController.setReference(kShooterRPM, ControlType.kVoltage);
     } else {
-      m_intake.set(0.0);
+  m_pidController.setReference(0, ControlType.kVoltage);
     }
-    if (m_controller.getBButtonPressed()) {
-      m_intake.set(-1.0); 
-    } else {
-      m_intake.set(0.0);
+    if (m_p1Controller.getBButtonPressed()) {
+      c_turretController.setReference(1000, ControlType.kVoltage);
     }
-    //output
-    if (m_controller.getAButton()) {
-      f_pidController.setReference(inTake, ControlType.kVelocity);
-    } else {
-        f_intakeMotor.stopMotor();
+    if (m_p1Controller.getXButtonPressed()) {
+      c_turretController.setReference(1000, ControlType.kVoltage);
+      m_pidController.setReference(kShooterRPM, ControlType.kVoltage);
     }
-    if (m_controller.getRightBumperButton()) {
-      kTargetRPM += 250;
+    // Display current shooter RPM
+    System.out.println("Shooter RPM: " + m_encoder.getVelocity());
+    // Adjust shooter RPM
+    if (m_p1Controller.getLeftBumperButton()) {
+      kShooterRPM -= 100;
     }
-    if (m_controller.getLeftBumperButton()) {
-      kTargetRPM -= 250;
+    if (m_p1Controller.getRightBumperButton()) {
+      kShooterRPM += 100;
     }
-    if (m_controller.getYButton()) {
-      m_pidController.setReference(kTargetRPM, ControlType.kVelocity);
-  } else {
-      m_shooterMotor.stopMotor();
   }
-  }
-
   /** This function is called once each time the robot enters test mode. */
   @Override
   public void testInit() {}
